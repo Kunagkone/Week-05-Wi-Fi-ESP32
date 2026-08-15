@@ -456,12 +456,12 @@ void app_main(void) {
 
 | ลำดับ | ชื่อเครือข่าย (SSID) | MAC Address (BSSID) | ความแรงสัญญาณ (RSSI: dBm) | ช่องความถี่ (Channel) | ประเภทการเข้ารหัส (Encryption Type) |
 | :---: | :--- | :--- | :---: | :---: | :--- |
-| 1 | | | | | |
-| 2 | | | | | |
-| 3 | | | | | |
-| 4 | | | | | |
-| 5 | | | | | |
-
+| 1 | KMITL-WIFI| 78:17:BE:C0: 7D:A1 | | | |
+| 2 |KMITL-Legacy | 78:17:BE:C0:7D:A0| | | |
+| 3 | KMITL-IOT| 78:17:BE:C0: 7D:A2 | | | |
+| 4 |S24 Ultra Koson | 7A:6D:06:A9:DE: 5A | | | |
+| 5 |KBBK-IPHONE | 2E:EC:B9: E4:42:C3 | | | |
+![alt text](image.png)
 ---
 
 ## 7. คำถามท้ายการทดลอง (Post-Lab Questions)
