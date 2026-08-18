@@ -388,6 +388,42 @@ void app_main(void) {
 ## 7. คำถามท้ายการทดลอง (Post-Lab Questions)
 
 1. เหตุใดการระบุ SSID ผิด (ข้อ 5.2.2) จึงส่งผลให้เกิด Disconnect Event ด้วย Reason Code `201` (`WIFI_REASON_NO_AP_FOUND`) ตั้งแต่เฟส Scan?
+เมื่อโปรแกรมเรียกใช้ฟังก์ชัน esp_wifi_connect() ระบบจะเริ่มทำงานใน Phase 1 (Scan Phase) โดยทันที ไดรเวอร์ Wi-Fi ของ ESP32 จะทำการกวาดสัญญาณ (Probe Request / Beacon Listening) ในทุกช่องความถี่ (Channel 1–13) เพื่อค้นหา AP ที่มีชื่อ SSID ตรงกับค่าที่ตั้งไว้ในโครงสร้าง wifi_config_t
+
+หากระบุ SSID ผิด หรือไม่มี AP ชื่อนั้นอยู่จริง ESP32 จะไม่ได้รับสัญญาณ Probe Response จาก AP ใดๆ ในบริเวณนั้น ส่งผลให้กระบวนการเชื่อมต่อ ล้มเหลวตั้งแต่ในเฟสแรก (Scan Phase) ก่อนที่จะทันได้เริ่มเข้าสู่เฟสการยืนยันตัวตน (Authentication Phase) ระบบ Event Loop จึงโพสต์ Event WIFI_EVENT_STA_DISCONNECTED พร้อม Reason Code 201 (WIFI_REASON_NO_AP_FOUND) เพื่อระบุอย่างชัดเจนว่าไม่พบเครือข่ายเป้าหมายในคลื่นวิทยุ
+
+
 2. เหตุใดการพิมพ์ Password ผิด (ข้อ 5.2.3) จึงผ่านเฟส Auth และ Assoc มาได้ แต่มาล้มเหลวในเฟส 4-Way Handshake (Reason Code `15` หรือ `204`)?
+
+Phase 2 (Authentication Phase): เป็นเพียงขั้นตอนร้องขอเปิดการเชื่อมต่อระดับกายภาพ (Open System Authentication) ยังไม่มีการส่งหรือตรวจสอบรหัสผ่าน (PSK) ทำให้ ESP32 ผ่านเฟสนี้ไปได้
+
+Phase 3 (Association Phase): เป็นขั้นตอนเจรจาพารามิเตอร์ของเครือข่าย (เช่น Supported Rates, Capability) ซึ่งก็ยังไม่มีการตรวจสอบรหัสผ่านเช่นกัน จึงผ่านเฟสนี้ไปได้เช่นกัน
+
+Phase 4 (4-Way Handshake Phase): เป็นขั้นตอนที่ AP และ ESP32 นำ Password ร่วมกับ SSID มาเข้าสมการแฮชเพื่อคำนวณสร้างคีย์กุยแจความปลอดภัย (PMK / PTK) และแลกเปลี่ยนค่า Nonce ระหว่างกัน
+
+เมื่อป้อน Password ผิด คีย์ที่ ESP32 คำนวณได้จะไม่ตรงกับฝั่ง AP ส่งผลให้การตรวจสอบความถูกต้องของรหัสข้อความ (MIC Verification Failure) ล้มเหลว AP จึงไม่อนุญาตให้สถาปนาคีย์ความปลอดภัยและตัดการเชื่อมต่อด้วยเหตุผลหมดเวลา (Timeout) เกิดเป็น Event WIFI_EVENT_STA_DISCONNECTED พร้อม Reason Code 15 (WIFI_REASON_HANDSHAKE_TIMEOUT) หรือ 204 (WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT)
+
+
 3. ลำดับการเกิด Event ระหว่าง **`WIFI_EVENT_STA_CONNECTED`** กับ **`IP_EVENT_STA_GOT_IP`** Event ใดเกิดขึ้นก่อนกัน และมีความหมายทางกายภาพของ Layer Network ต่างกันอย่างไร?
+
+WIFI_EVENT_STA_CONNECTED เกิดขึ้นก่อน IP_EVENT_STA_GOT_IP
+
+ความแตกต่างทางกายภาพในมุมมอง OSI / TCP/IP Layer มีดังนี้:
+
+WIFI_EVENT_STA_CONNECTED (Data Link Layer / Layer 2):
+
+หมายถึง บอร์ด ESP32 ได้ทำการจับคู่คลื่นวิทยุและสถาปนาการเชื่อมต่อระดับ MAC Address กับ AP สำเร็จเรียบร้อยแล้ว (ผ่าน Phase 1 ถึง Phase 4) ทั้งสองฝั่งส่ง Ethernet Frame ถึงกันได้แล้ว แต่ ESP32 ยังไม่มีหมายเลข IP Address จึงยังไม่สามารถรับ-ส่งข้อมูลในระดับ IP หรือออกสู่เครือข่ายอินเทอร์เน็ตได้
+
+IP_EVENT_STA_GOT_IP (Network Layer / Layer 3):
+
+เกิดขึ้นเมื่อโมดูล DHCP Client (esp_netif) บน ESP32 เจรจากับ DHCP Server บน Router และได้รับการจัดสรร IP Address, Subnet Mask และ Gateway เรียบร้อยแล้ว สิ้นสุดขั้นตอนนี้ ESP32 จะสามารถส่งแพ็กเก็ต IP (เช่น TCP, UDP, HTTP, MQTT) เพื่อสื่อสารกับเซิร์ฟเวอร์ภายนอกหรืออินเทอร์เน็ตได้สมบูรณ์
+
+
 4. สมาชิกตัวแปร `reason` ในโครงสร้าง `wifi_event_sta_disconnected_t` มีประโยชน์อย่างไรต่อการออกแบบระบบค้นหาสาเหตุและกู้คืนการเชื่อมต่อ (Auto-Reconnection Mechanism) ในแอปพลิเคชัน IoT?
+กรณีข้อผิดพลาดชั่วคราว (Transient Errors): เช่น WIFI_REASON_BEACON_TIMEOUT (200) หรือ WIFI_REASON_CONNECTION_FAIL (208) ซึ่งเกิดจากสัญญาณสวิง ชั่วคราว
+
+กลยุทธ์: ควรกำหนดให้ระบบทำการพยายามเชื่อมต่อใหม่ (esp_wifi_connect()) โดยใช้อัลกอริทึม Exponential Backoff (เว้นระยะเวลา 2s, 4s, 8s, ...) เพื่อรอให้คลื่นวิทยุกลับมาเสถียร
+
+กรณีข้อผิดพลาดจากการตั้งค่าผิด (Authentication / Config Errors): เช่น WIFI_REASON_AUTH_FAIL (202), WIFI_REASON_HANDSHAKE_TIMEOUT (15) หรือ WIFI_REASON_NO_AP_FOUND (201)
+
+กลยุทธ์: การวนลูปสั่งเชื่อมต่อซ้ำจะไม่มีวันสำเร็จและจะสิ้นเปลืองพลังงานแบตเตอรี่โดยเปล่าประโยชน์ ระบบควรรู้ว่าต้องหยุด Reconnect แล้วทำการเปลี่ยนโหมดไปเป็น Wi-Fi Provisioning (เช่น เปิดโหมด SoftAP / BLE) เพื่อให้ผู้ใช้เข้ามาป้อน SSID/Password ใหม่ หรือแจ้งเตือนสถานะ Error ผ่านไฟ LED / หน้าจอ Display
