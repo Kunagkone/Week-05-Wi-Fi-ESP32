@@ -346,6 +346,38 @@ void app_main(void) {
 ## 7. คำถามท้ายการทดลอง (Post-Lab Questions)
 
 1. เหตุใดกระบวนการ **4-Way Handshake** จึงพิสูจน์ทราบรหัสผ่าน Wi-Fi ได้โดยไม่ต้องส่งรหัสผ่าน (Passphrase) ลอยไปในอากาศเลยแม้แต่แพ็กเกจเดียว?
+
+กระบวนการ WPA2 4-Way Handshake ใช้หลักการสร้างคีย์แฮชสมมุติร่วมกันล่วงหน้า โดยทั้งฝั่ง AP และ ESP32 นำรหัสผ่าน (Passphrase) และ SSID มาผ่านฟังก์ชันแฮช PBKDF2 เพื่อสร้างเป็นคีย์ PMK (Pairwise Master Key) เก็บไว้ในหน่วยความจำของตนเอง
+ในระหว่างการแลกเปลี่ยนเฟรม 4-Way Handshake:
+AP ส่งค่าสุ่ม ANonce ให้ ESP32
+ESP32 สร้างค่าสุ่ม SNonce แล้วนำ (PMK + ANonce + SNonce + MAC Addresses) มาคำนวณสร้างคีย์ชั่วคราวชื่อ PTK (Pairwise Transient Key)
+ESP32 นำส่วนหนึ่งของ PTK มาคำนวณหาค่า MIC (Message Integrity Code) แล้วส่ง SNonce + MIC กลับไปให้ AP ในเฟรม 2/4
+ฝั่ง AP นำ PMK ของตนเองมาคำนวณหา PTK และ MIC ในแบบเดียวกัน แล้วนำค่า MIC ที่ได้มาเปรียบเทียบกับ MIC ที่ส่งมาจาก ESP32
+
 2. อธิบายบทบาทและที่มาของคีย์ **PMK (Pairwise Master Key)** และ **PTK (Pairwise Transient Key)** ว่ามีความสัมพันธ์กันอย่างไรในการเข้ารหัสเฟรมข้อมูล?
+
+PMK (Pairwise Master Key): เป็นคีย์หลักแบบสถิต (Static Master Secret) ที่เกิดจากการนำรหัสผ่าน Wi-Fi (PSK) และชื่อ SSID มาเข้ารหัสผ่านอัลกอริทึม PBKDF2 (SHA-1 วนลูป 4,096 รอบ) คีย์นี้จะมีค่าคงที่ตราบใดที่รหัสผ่านและ SSID ไม่เปลี่ยนแปลง
+
+PTK (Pairwise Transient Key): เป็นคีย์ชั่วคราวเซสชัน (Dynamic Session Key) ที่ถูกสร้างขึ้นใหม่ทุกครั้งที่มีการสถาปนาการเชื่อมต่อ โดยคำนวณมาจาก PRF(PMK + ANonce + SNonce + AP_MAC + STA_MAC)
+
+ความสัมพันธ์:
+
+PMK ทำหน้าที่เป็น "สี่เหลี่ยมตั้งต้น (Seed)" สำหรับใช้ยืนยันความเป็นเจ้าของรหัสผ่าน จากนั้น PMK ร่วมกับค่าสุ่ม Nonce จะถูกนำไปผลิตเป็น PTK โดยภายใน PTK จะถูกแบ่งออกเป็นคีย์ย่อย 3 ส่วน:
+KCK (Key Confirmation Key): ใช้ตรวจสอบค่า MIC ในเฟรม EAPOL เพื่อพิสูจน์ความถูกต้องของรหัสผ่าน
+KEK (Key Encryption Key): ใช้เข้ารหัสคีย์รวม (GTK) ในเฟรม 3/4
+TK (Temporal Key): ใช้เข้ารหัสเฟรมข้อมูลผู้ใช้จริง (Unicast Data Payload) ด้วย AES-CCMP บน Data Link Layer
+
 3. เหตุใดเมื่อเราพิมพ์ Password ผิด (ข้อ 5.4.2) ESP32 จึงยังคงได้รับ Event **`WIFI_EVENT_STA_CONNECTED`** ก่อนที่จะเกิด Event **`WIFI_EVENT_STA_DISCONNECTED`** ตามมาในภายหลัง?
+
+เพราะการเชื่อมต่อ Wi-Fi ทำงานแยกกันเป็นลำดับขั้น (Phases):
+
+Phase 2 (Auth) & Phase 3 (Assoc): ทำงานในระดับเครือข่ายกายภาพ (Open System Authentication) ซึ่งตรวจเช็กเพียงแค่ว่า ESP32 สื่อสารคลื่นวิทยุกับ AP ได้หรือไม่ และ AP ยินยอมรับเข้าเป็นสมาชิกเครือข่ายหรือไม่ โดยยังไม่มีการตรวจเช็ก Password ในชั้นนี้ เมื่อผ่าน Phase 3 ไดรเวอร์ Wi-Fi จะส่ง Event WIFI_EVENT_STA_CONNECTED ออกมาทันทีเพื่อแจ้งว่า Link-Layer เชื่อมต่อแล้ว
+
+Phase 4 (4-Way Handshake): เกิดขึ้น หลังจาก สภาพลิงก์เชื่อมต่อสำเร็จ ในขั้นตอนนี้ AP และ ESP32 จึงเริ่มแลกเปลี่ยนเฟรม EAPOL เพื่อตรวจสอบรหัสผ่าน เมื่อ Password ผิด ค่า MIC ที่ ESP32 คำนวณได้จะไม่ตรงกับที่ AP คาดหวัง การสร้าง PTK ล้มเหลว AP หรือ ESP32 จึงยกเลิกการเชื่อมต่อและส่ง Event WIFI_EVENT_STA_DISCONNECTED (พร้อม Reason Code 15 หรือ 204) ตามมาในที่สุด
+
 4. หากเครือข่าย Wi-Fi ไม่มี DHCP Server (ไม่มีการแจก IP อัตโนมัติ) ผลการทดลองในข้อ 5.4.1 จะหยุดอยู่ที่ขั้นตอนใด และจะไม่เกิด Event ใดขึ้น?
+ขั้นตอนที่หยุด: การทดลองจะผ่าน Phase 1 ถึง Phase 4 สำเร็จลุล่วง ได้รับ Event WIFI_EVENT_STA_CONNECTED เรียบร้อยแล้ว แต่จะ ไปหยุดค้างอยู่ที่ Phase 5 (IP Assignment Phase)
+
+ผลลัพธ์: โมดูล DHCP Client (esp_netif) บน ESP32 จะพยายามส่งแพ็กเกจ DHCP Discover ออกไปเพื่อค้นหา DHCP Server แต่ไม่มีการตอบรับ จนกระทั่งหมดเวลา (Timeout)
+
+Event ที่จะไม่เกิดขึ้น: จะไม่เกิด Event IP_EVENT_STA_GOT_IP ขึ้นอย่างเด็ดขาด ส่งผลให้ฟังก์ชัน xEventGroupWaitBits() ติดสถานะ Timeout และโปรแกรมจะไม่สามารถสื่อสารในระดับ TCP/IP หรือเข้าถึงอินเทอร์เน็ตได้ เว้นแต่จะทำการตั้งค่า Static IP แบบกำหนดเอง
