@@ -338,7 +338,7 @@ void app_main(void) {
 | พารามิเตอร์ Network Layer | ค่าที่จัดสรรได้จริงจาก DHCP Server |
 | :--- | :--- |
 | **IP Address** | |
-| **Subnet Mask** | |
+| **Subnet Mask** | 255.255.255.0  |
 | **Default Gateway** | |
 
 ---
